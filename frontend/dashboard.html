@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SSO Access Monitoring Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+  :root{--bg:#0a0e1a;--panel:#111827;--border:#1e2d40;--accent:#00d4ff;--red:#ff4757;--yellow:#ffa502;--green:#2ed573;--text:#e2e8f0;--muted:#64748b}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;min-height:100vh}
+  header{border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:center;gap:16px;background:var(--panel)}
+  header h1{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;color:var(--accent);letter-spacing:.05em}
+  header span{font-size:.75rem;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+  .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:24px 32px}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;position:relative;overflow:hidden}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+  .kpi.blue::before{background:var(--accent)}
+  .kpi.red::before{background:var(--red)}
+  .kpi.yellow::before{background:var(--yellow)}
+  .kpi.green::before{background:var(--green)}
+  .kpi-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+  .kpi-value{font-size:2.4rem;font-weight:600;font-family:'IBM Plex Mono',monospace;margin:8px 0 4px}
+  .kpi.blue .kpi-value{color:var(--accent)}
+  .kpi.red .kpi-value{color:var(--red)}
+  .kpi.yellow .kpi-value{color:var(--yellow)}
+  .kpi.green .kpi-value{color:var(--green)}
+  .kpi-sub{font-size:.72rem;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 32px 24px}
+  .grid3{display:grid;grid-template-columns:2fr 1fr;gap:16px;padding:0 32px 24px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px}
+  .panel h2{font-family:'IBM Plex Mono',monospace;font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:16px}
+  canvas{max-height:220px}
+  table{width:100%;border-collapse:collapse;font-size:.78rem}
+  th{text-align:left;padding:8px 12px;font-family:'IBM Plex Mono',monospace;font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border-bottom:1px solid var(--border)}
+  td{padding:8px 12px;border-bottom:1px solid #1a2333;font-family:'IBM Plex Mono',monospace}
+  .badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:.65rem;font-weight:600;text-transform:uppercase}
+  .badge.FAILURE,.badge.HIGH{background:rgba(255,71,87,.15);color:var(--red);border:1px solid rgba(255,71,87,.3)}
+  .badge.ERROR,.badge.CRITICAL{background:rgba(255,165,2,.15);color:var(--yellow);border:1px solid rgba(255,165,2,.3)}
+  .badge.SUCCESS{background:rgba(46,213,115,.15);color:var(--green);border:1px solid rgba(46,213,115,.3)}
+  .badge.MEDIUM{background:rgba(0,212,255,.15);color:var(--accent);border:1px solid rgba(0,212,255,.3)}
+  .badge.SAML{background:rgba(0,212,255,.1);color:var(--accent)}
+  .badge.OIDC{background:rgba(255,165,2,.1);color:var(--yellow)}
+  .badge.OAuth2{background:rgba(46,213,115,.1);color:var(--green)}
+  #alerts-list{max-height:260px;overflow-y:auto}
+  #alerts-list::-webkit-scrollbar{width:4px}
+  #alerts-list::-webkit-scrollbar-track{background:transparent}
+  #alerts-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  .alert-item{padding:10px 0;border-bottom:1px solid #1a2333}
+  .alert-item:last-child{border:none}
+  .alert-msg{font-size:.75rem;color:var(--text);margin-top:4px}
+  .alert-meta{font-size:.65rem;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:2px}
+</style>
+</head>
+<body>
+<header>
+  <div class="live-dot"></div>
+  <h1>SSO Access Monitoring Dashboard</h1>
+  <span>Enterprise Multi-Tenant · SAML / OIDC / OAuth2</span>
+</header>
+<div class="kpi-row">
+  <div class="kpi blue"><div class="kpi-label">Total Events</div><div class="kpi-value" id="kpi-total">-</div><div class="kpi-sub">Last 48 hours</div></div>
+  <div class="kpi red"><div class="kpi-label">Auth Failures</div><div class="kpi-value" id="kpi-failures">-</div><div class="kpi-sub">Status: FAILURE</div></div>
+  <div class="kpi yellow"><div class="kpi-label">Errors</div><div class="kpi-value" id="kpi-errors">-</div><div class="kpi-sub">Status: ERROR</div></div>
+  <div class="kpi green"><div class="kpi-label">Open Alerts</div><div class="kpi-value" id="kpi-alerts">-</div><div class="kpi-sub">Unresolved</div></div>
+</div>
+<div class="grid">
+  <div class="panel"><h2>Auth Events by Tenant</h2><canvas id="tenantChart"></canvas></div>
+  <div class="panel"><h2>Protocol Breakdown</h2><canvas id="protocolChart"></canvas></div>
+</div>
+<div class="grid3">
+  <div class="panel">
+    <h2>Recent Auth Logs</h2>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Tenant</th><th>App</th><th>Protocol</th><th>Status</th><th>Error</th></tr></thead>
+      <tbody id="logs-body"></tbody>
+    </table>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Active Alerts</h2>
+    <div id="alerts-list"></div>
+  </div>
+</div>
+<div class="grid">
+  <div class="panel"><h2>Top Error Codes</h2><canvas id="errorChart"></canvas></div>
+  <div class="panel">
+    <h2>Runbook - Tier 1 Quick Reference</h2>
+    <div style="font-size:.75rem;line-height:1.8;font-family:'IBM Plex Mono',monospace;color:var(--muted)">
+      <p style="color:var(--red);margin-bottom:8px">SAML_ASSERTION_INVALID</p>
+      <p style="margin-bottom:12px">Check SP/IdP metadata sync. Re-upload SP metadata in IdP console. Verify clock skew less than 5 min.</p>
+      <p style="color:var(--yellow);margin-bottom:8px">TOKEN_EXPIRED / OIDC_MISMATCH</p>
+      <p style="margin-bottom:12px">Force token refresh via app settings. Confirm redirect URI matches exactly in IdP config.</p>
+      <p style="color:var(--red);margin-bottom:8px">ACCOUNT_LOCKED</p>
+      <p style="margin-bottom:12px">Unlock in IdP admin panel. Check for brute-force pattern - escalate to Tier 2 if more than 5 attempts.</p>
+      <p style="color:var(--yellow);margin-bottom:8px">FEDERATION_ERROR</p>
+      <p style="margin-bottom:12px">Verify trust relationship between IdP and SP. Check certificate expiry. Escalate if unresolved.</p>
+      <p style="color:var(--accent);margin-bottom:8px">MFA_TIMEOUT</p>
+      <p>User did not complete MFA in time. Ask them to retry. If repeated, check authenticator app sync.</p>
+    </div>
+  </div>
+</div>
+<script>
+const API = "http://localhost:5050/api";
+const COLORS = ["#00d4ff","#ff4757","#ffa502","#2ed573","#a29bfe","#fd79a8"];
+async function fetchJSON(path){ const r = await fetch(API+path); return r.json(); }
+function fmt(ts){ return new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+async function loadKPIs(){
+  const d = await fetchJSON("/stats");
+  document.getElementById("kpi-total").textContent = d.total_events;
+  document.getElementById("kpi-failures").textContent = d.failures;
+  document.getElementById("kpi-errors").textContent = d.errors;
+  document.getElementById("kpi-alerts").textContent = d.open_alerts;
+}
+async function loadTenantChart(){
+  const data = await fetchJSON("/by-tenant");
+  const labels = data.map(r=>r.tenant_id);
+  new Chart(document.getElementById("tenantChart"),{
+    type:"bar",
+    data:{labels,datasets:[
+      {label:"Success",data:data.map(r=>r.success),backgroundColor:"rgba(46,213,115,.7)"},
+      {label:"Failure",data:data.map(r=>r.failure),backgroundColor:"rgba(255,71,87,.7)"},
+      {label:"Error",  data:data.map(r=>r.error),  backgroundColor:"rgba(255,165,2,.7)"}
+    ]},
+    options:{plugins:{legend:{labels:{color:"#64748b",font:{family:"IBM Plex Mono",size:10}}}},
+      scales:{x:{ticks:{color:"#64748b",font:{family:"IBM Plex Mono",size:9}},grid:{color:"#1e2d40"}},
+              y:{ticks:{color:"#64748b",font:{family:"IBM Plex Mono",size:9}},grid:{color:"#1e2d40"}}},
+      responsive:true,maintainAspectRatio:true}
+  });
+}
+async function loadProtocolChart(){
+  const data = await fetchJSON("/by-protocol");
+  const protocols = [...new Set(data.map(r=>r.protocol))];
+  const totals = protocols.map(p=>data.filter(r=>r.protocol===p).reduce((a,r)=>a+r.cnt,0));
+  new Chart(document.getElementById("protocolChart"),{
+    type:"doughnut",
+    data:{labels:protocols,datasets:[{data:totals,backgroundColor:COLORS,borderColor:"#0a0e1a",borderWidth:2}]},
+    options:{plugins:{legend:{labels:{color:"#64748b",font:{family:"IBM Plex Mono",size:10}}}},responsive:true,maintainAspectRatio:true}
+  });
+}
+async function loadErrorChart(){
+  const data = await fetchJSON("/error-codes");
+  new Chart(document.getElementById("errorChart"),{
+    type:"bar",
+    data:{labels:data.map(r=>r.error_code),
+          datasets:[{label:"Count",data:data.map(r=>r.cnt),backgroundColor:"rgba(255,71,87,.7)",borderRadius:4}]},
+    options:{indexAxis:"y",
+      plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:"#64748b",font:{family:"IBM Plex Mono",size:9}},grid:{color:"#1e2d40"}},
+              y:{ticks:{color:"#64748b",font:{family:"IBM Plex Mono",size:9}},grid:{color:"#1e2d40"}}},
+      responsive:true,maintainAspectRatio:true}
+  });
+}
+async function loadLogs(){
+  const data = await fetchJSON("/logs");
+  const tbody = document.getElementById("logs-body");
+  tbody.innerHTML = data.slice(0,20).map(r=>`
+    <tr>
+      <td>${fmt(r.timestamp)}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.user_email}</td>
+      <td>${r.tenant_id}</td>
+      <td>${r.app_name}</td>
+      <td><span class="badge ${r.protocol}">${r.protocol}</span></td>
+      <td><span class="badge ${r.status}">${r.status}</span></td>
+      <td style="color:var(--muted)">${r.error_code||"-"}</td>
+    </tr>`).join("");
+}
+async function loadAlerts(){
+  const data = await fetchJSON("/alerts");
+  document.getElementById("alerts-list").innerHTML = data.map(a=>`
+    <div class="alert-item">
+      <span class="badge ${a.severity}">${a.severity}</span>
+      <span class="badge" style="margin-left:4px;font-size:.6rem">${a.alert_type}</span>
+      <div class="alert-msg">${a.message}</div>
+      <div class="alert-meta">${a.tenant_id||""} · ${fmt(a.created_at)}</div>
+    </div>`).join("") || "<p style='color:var(--muted);font-size:.75rem'>No active alerts</p>";
+}
+Promise.all([loadKPIs(),loadTenantChart(),loadProtocolChart(),loadErrorChart(),loadLogs(),loadAlerts()]);
+setInterval(()=>Promise.all([loadKPIs(),loadLogs(),loadAlerts()]), 15000);
+</script>
+</body>
+</html>
