@@ -17,7 +17,7 @@ def simulate_logs(n=200):
     init_db()
     now = datetime.utcnow()
     for _ in range(n):
-        ts = now - timedelta(minutes=random.randint(0, 2880))
+        ts = now - timedelta(minutes=random.randint(0, 30))
         status = random.choices(STATUSES, weights=[70, 20, 10])[0]
         error = random.choice(ERRORS) if status != "SUCCESS" else None
         execute("""
